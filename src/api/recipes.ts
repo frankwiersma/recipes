@@ -1,0 +1,286 @@
+import { Hono } from 'hono';
+import { db, sqlite } from '../db/index';
+import { recipes, tags, recipeTags, mealHistory } from '../db/schema';
+import { eq, like, desc, sql } from 'drizzle-orm';
+import { scrapeRecipe } from '../services/scraper';
+
+const app = new Hono();
+
+// Helper to slugify
+function slugify(text: string): string {
+  return text
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+// GET /api/recipes - List all recipes
+app.get('/', async (c) => {
+  const category = c.req.query('category');
+  const tag = c.req.query('tag');
+
+  let query = db.select().from(recipes);
+
+  if (category) {
+    query = query.where(eq(recipes.category, category)) as any;
+  }
+
+  const results = await query.orderBy(desc(recipes.updatedAt));
+
+  // Parse JSON fields
+  const parsed = results.map(r => ({
+    ...r,
+    ingredients: r.ingredients ? JSON.parse(r.ingredients as string) : [],
+    instructions: r.instructions ? JSON.parse(r.instructions as string) : [],
+    seasons: r.seasons ? JSON.parse(r.seasons as string) : [],
+    weatherTags: r.weatherTags ? JSON.parse(r.weatherTags as string) : [],
+  }));
+
+  return c.json(parsed);
+});
+
+// GET /api/recipes/search - Fuzzy search
+app.get('/search', async (c) => {
+  const q = c.req.query('q');
+  if (!q || q.length < 2) {
+    return c.json([]);
+  }
+
+  // Use FTS5 for search
+  const searchTerm = q.replace(/[^\w\s]/g, '') + '*';
+
+  try {
+    const results = sqlite.query(`
+      SELECT r.*
+      FROM recipes_fts
+      JOIN recipes r ON recipes_fts.rowid = r.id
+      WHERE recipes_fts MATCH ?
+      ORDER BY bm25(recipes_fts)
+      LIMIT 20
+    `).all(searchTerm) as any[];
+
+    const parsed = results.map(r => ({
+      ...r,
+      ingredients: r.ingredients ? JSON.parse(r.ingredients) : [],
+      instructions: r.instructions ? JSON.parse(r.instructions) : [],
+      seasons: r.seasons ? JSON.parse(r.seasons) : [],
+      weatherTags: r.weather_tags ? JSON.parse(r.weather_tags) : [],
+    }));
+
+    return c.json(parsed);
+  } catch (e) {
+    // Fallback to LIKE search
+    const results = await db.select().from(recipes)
+      .where(like(recipes.name, `%${q}%`))
+      .limit(20);
+
+    const parsed = results.map(r => ({
+      ...r,
+      ingredients: r.ingredients ? JSON.parse(r.ingredients as string) : [],
+      instructions: r.instructions ? JSON.parse(r.instructions as string) : [],
+      seasons: r.seasons ? JSON.parse(r.seasons as string) : [],
+      weatherTags: r.weatherTags ? JSON.parse(r.weatherTags as string) : [],
+    }));
+
+    return c.json(parsed);
+  }
+});
+
+// GET /api/recipes/:id - Get single recipe
+app.get('/:id', async (c) => {
+  const id = parseInt(c.req.param('id'));
+  const recipe = await db.query.recipes.findFirst({
+    where: eq(recipes.id, id),
+  });
+
+  if (!recipe) {
+    return c.json({ error: 'Recipe not found' }, 404);
+  }
+
+  // Get tags for this recipe
+  const recipeTags_ = await db.select({
+    tag: tags,
+  })
+    .from(recipeTags)
+    .innerJoin(tags, eq(recipeTags.tagId, tags.id))
+    .where(eq(recipeTags.recipeId, id));
+
+  // Get last eaten date
+  const lastEaten = await db.query.mealHistory.findFirst({
+    where: eq(mealHistory.recipeId, id),
+    orderBy: desc(mealHistory.eatenAt),
+  });
+
+  return c.json({
+    ...recipe,
+    ingredients: recipe.ingredients ? JSON.parse(recipe.ingredients as string) : [],
+    instructions: recipe.instructions ? JSON.parse(recipe.instructions as string) : [],
+    seasons: recipe.seasons ? JSON.parse(recipe.seasons as string) : [],
+    weatherTags: recipe.weatherTags ? JSON.parse(recipe.weatherTags as string) : [],
+    tags: recipeTags_.map(rt => rt.tag),
+    lastEaten: lastEaten?.eatenAt || null,
+  });
+});
+
+// POST /api/recipes - Create recipe
+app.post('/', async (c) => {
+  const body = await c.req.json();
+
+  const slug = slugify(body.name);
+
+  const [recipe] = await db.insert(recipes).values({
+    name: body.name,
+    slug,
+    description: body.description || null,
+    category: body.category || 'pasta',
+    ingredients: JSON.stringify(body.ingredients || []),
+    instructions: body.instructions ? JSON.stringify(body.instructions) : null,
+    defaultServings: body.defaultServings || 2,
+    imageUrl: body.imageUrl || null,
+    sourceUrl: body.sourceUrl || null,
+    sourceType: body.sourceType || 'manual',
+    seasons: JSON.stringify(body.seasons || []),
+    weatherTags: JSON.stringify(body.weatherTags || []),
+    prepTimeMinutes: body.prepTimeMinutes || null,
+    cookTimeMinutes: body.cookTimeMinutes || null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  }).returning();
+
+  return c.json(recipe, 201);
+});
+
+// PUT /api/recipes/:id - Update recipe
+app.put('/:id', async (c) => {
+  const id = parseInt(c.req.param('id'));
+  const body = await c.req.json();
+
+  const [recipe] = await db.update(recipes)
+    .set({
+      name: body.name,
+      description: body.description,
+      category: body.category,
+      ingredients: JSON.stringify(body.ingredients || []),
+      instructions: body.instructions ? JSON.stringify(body.instructions) : null,
+      defaultServings: body.defaultServings,
+      imageUrl: body.imageUrl,
+      seasons: JSON.stringify(body.seasons || []),
+      weatherTags: JSON.stringify(body.weatherTags || []),
+      prepTimeMinutes: body.prepTimeMinutes,
+      cookTimeMinutes: body.cookTimeMinutes,
+      updatedAt: new Date(),
+    })
+    .where(eq(recipes.id, id))
+    .returning();
+
+  return c.json(recipe);
+});
+
+// DELETE /api/recipes/:id - Delete recipe
+app.delete('/:id', async (c) => {
+  const id = parseInt(c.req.param('id'));
+  await db.delete(recipes).where(eq(recipes.id, id));
+  return c.json({ success: true });
+});
+
+// POST /api/recipes/import/url - Import from URL
+app.post('/import/url', async (c) => {
+  const { url, category } = await c.req.json();
+
+  if (!url) {
+    return c.json({ error: 'URL is required' }, 400);
+  }
+
+  try {
+    const scraped = await scrapeRecipe(url);
+
+    const slug = slugify(scraped.name);
+
+    // Default seasons/weather based on category
+    const categoryDefaults: Record<string, { seasons: string[], weatherTags: string[] }> = {
+      'curry': { seasons: ['herfst', 'winter'], weatherTags: ['koud', 'regenachtig'] },
+      'soep': { seasons: ['herfst', 'winter'], weatherTags: ['koud', 'regenachtig'] },
+      'salade': { seasons: ['lente', 'zomer'], weatherTags: ['warm', 'zonnig'] },
+      'pokebowl': { seasons: ['lente', 'zomer'], weatherTags: ['warm', 'zonnig'] },
+      'pasta': { seasons: ['lente', 'zomer', 'herfst', 'winter'], weatherTags: [] },
+      'wraps': { seasons: ['lente', 'zomer'], weatherTags: ['warm'] },
+      'plaattaart': { seasons: ['herfst', 'winter'], weatherTags: ['koud'] },
+      'shakshuka': { seasons: ['lente', 'zomer', 'herfst', 'winter'], weatherTags: [] },
+    };
+
+    const defaults = categoryDefaults[category] || { seasons: [], weatherTags: [] };
+
+    const [recipe] = await db.insert(recipes).values({
+      name: scraped.name,
+      slug,
+      description: scraped.description,
+      category: category || 'pasta',
+      ingredients: JSON.stringify(scraped.ingredients),
+      instructions: scraped.instructions ? JSON.stringify(scraped.instructions) : null,
+      defaultServings: scraped.defaultServings,
+      imageUrl: scraped.imageUrl,
+      sourceUrl: url,
+      sourceType: url.includes('picnic') ? 'picnic' : 'other',
+      seasons: JSON.stringify(defaults.seasons),
+      weatherTags: JSON.stringify(defaults.weatherTags),
+      prepTimeMinutes: scraped.prepTimeMinutes,
+      cookTimeMinutes: scraped.cookTimeMinutes,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }).returning();
+
+    return c.json(recipe, 201);
+  } catch (e) {
+    return c.json({ error: `Failed to scrape: ${e}` }, 500);
+  }
+});
+
+// POST /api/recipes/:id/rescrape - Re-scrape an existing recipe from its source URL
+app.post('/:id/rescrape', async (c) => {
+  const id = parseInt(c.req.param('id'));
+
+  const existing = await db.query.recipes.findFirst({
+    where: eq(recipes.id, id),
+  });
+
+  if (!existing) {
+    return c.json({ error: 'Recipe not found' }, 404);
+  }
+
+  if (!existing.sourceUrl) {
+    return c.json({ error: 'Recipe has no source URL to scrape' }, 400);
+  }
+
+  try {
+    const scraped = await scrapeRecipe(existing.sourceUrl);
+
+    const [recipe] = await db.update(recipes)
+      .set({
+        name: scraped.name,
+        description: scraped.description || existing.description,
+        ingredients: JSON.stringify(scraped.ingredients),
+        instructions: scraped.instructions?.length ? JSON.stringify(scraped.instructions) : existing.instructions,
+        defaultServings: scraped.defaultServings,
+        imageUrl: scraped.imageUrl || existing.imageUrl,
+        prepTimeMinutes: scraped.prepTimeMinutes || existing.prepTimeMinutes,
+        cookTimeMinutes: scraped.cookTimeMinutes || existing.cookTimeMinutes,
+        updatedAt: new Date(),
+      })
+      .where(eq(recipes.id, id))
+      .returning();
+
+    return c.json({
+      ...recipe,
+      ingredients: recipe.ingredients ? JSON.parse(recipe.ingredients as string) : [],
+      instructions: recipe.instructions ? JSON.parse(recipe.instructions as string) : [],
+      seasons: recipe.seasons ? JSON.parse(recipe.seasons as string) : [],
+      weatherTags: recipe.weatherTags ? JSON.parse(recipe.weatherTags as string) : [],
+    });
+  } catch (e) {
+    return c.json({ error: `Failed to scrape: ${e}` }, 500);
+  }
+});
+
+export default app;

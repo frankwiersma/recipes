@@ -1,0 +1,50 @@
+# Dependencies
+node_modules/
+
+# Build output
+out/
+dist/
+web/dist/
+*.tgz
+
+# Database - contains personal data
+data/
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+
+# Environment variables (secrets)
+.env
+.env.*
+!.env.example
+
+# Code coverage
+coverage/
+*.lcov
+
+# Logs
+logs/
+*.log
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+
+# Caches
+.eslintcache
+.cache/
+*.tsbuildinfo
+.svelte-kit/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+tmp/
+temp/
+*.tmp
