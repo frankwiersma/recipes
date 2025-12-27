@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  recipes:
+    build: .
+    container_name: recipes
+    restart: unless-stopped
+    networks:
+      - traefik-network
+    volumes:
+      - ./data:/app/data
+    env_file:
+      - .env
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.recipes.rule=Host(`recepten.co-evolve.nl`)"
+      - "traefik.http.routers.recipes.entrypoints=websecure"
+      - "traefik.http.routers.recipes.tls.certresolver=cloudflare"
+      - "traefik.http.services.recipes.loadbalancer.server.port=3000"
+
+networks:
+  traefik-network:
+    external: true
