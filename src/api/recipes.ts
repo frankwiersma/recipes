@@ -64,11 +64,23 @@ app.get('/search', async (c) => {
     `).all(searchTerm) as any[];
 
     const parsed = results.map(r => ({
-      ...r,
+      id: r.id,
+      name: r.name,
+      slug: r.slug,
+      description: r.description,
+      category: r.category,
       ingredients: r.ingredients ? JSON.parse(r.ingredients) : [],
       instructions: r.instructions ? JSON.parse(r.instructions) : [],
+      defaultServings: r.default_servings,
+      imageUrl: r.image_url,
+      sourceUrl: r.source_url,
+      sourceType: r.source_type,
       seasons: r.seasons ? JSON.parse(r.seasons) : [],
       weatherTags: r.weather_tags ? JSON.parse(r.weather_tags) : [],
+      prepTimeMinutes: r.prep_time_minutes,
+      cookTimeMinutes: r.cook_time_minutes,
+      createdAt: r.created_at,
+      updatedAt: r.updated_at,
     }));
 
     return c.json(parsed);
