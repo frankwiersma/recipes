@@ -16,7 +16,7 @@ export interface Recipe {
   defaultServings: number;
   imageUrl?: string;
   sourceUrl?: string;
-  sourceType?: 'manual' | 'markdown' | 'picnic' | 'ah' | 'hellofresh' | 'other';
+  sourceType?: 'manual' | 'markdown' | 'picnic' | 'ah' | 'hellofresh' | 'instagram' | 'other';
   seasons: string[];
   weatherTags: string[];
   prepTimeMinutes?: number;
@@ -33,6 +33,7 @@ export function getSourceDisplayName(sourceType?: string): string | null {
     'ah': 'Albert Heijn',
     'hellofresh': 'HelloFresh',
     'picnic': 'Picnic',
+    'instagram': 'Instagram',
     'leukerecepten': 'Leuke Recepten',
     'ohmyfoodness': 'Oh My Foodness',
     'uitpaulineskeuken': 'Uit Paulines Keuken',
@@ -98,12 +99,23 @@ async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
     ...options,
   });
   if (!res.ok) {
-    throw new Error(`API error: ${res.status}`);
+    // Try to get error message from response
+    try {
+      const errorData = await res.json();
+      throw new Error(errorData.error || `API error: ${res.status}`);
+    } catch (e) {
+      if (e instanceof Error && !e.message.startsWith('API error:')) {
+        throw e;
+      }
+      throw new Error(`API error: ${res.status}`);
+    }
   }
   return res.json();
 }
 
 export const api = {
+  baseUrl: API_BASE,
+
   // Recipes
   getRecipes: (category?: string) =>
     fetchJson<Recipe[]>(`/recipes${category ? `?category=${category}` : ''}`),

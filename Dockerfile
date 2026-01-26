@@ -33,8 +33,8 @@ COPY --from=builder /app/tsconfig.json ./
 COPY --from=builder /app/drizzle.config.ts ./
 COPY --from=builder /app/raw-note.md ./
 
-# Create data directory
-RUN mkdir -p /app/data
+# Create data and images directories
+RUN mkdir -p /app/data /app/public/images/generated
 
 # Expose port
 EXPOSE 3000

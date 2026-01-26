@@ -296,6 +296,9 @@ app.post('/api/weekplan/:date/regenerate', async (c) => {
 // Health check
 app.get('/api/health', (c) => c.json({ status: 'ok', time: new Date().toISOString() }));
 
+// Serve generated images from public folder
+app.use('/images/*', serveStatic({ root: './public' }));
+
 // Serve static files from web/dist in production
 app.use('/*', serveStatic({ root: './web/dist' }));
 

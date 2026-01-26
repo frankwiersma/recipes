@@ -9,6 +9,7 @@ services:
       - traefik-network
     volumes:
       - ./data:/app/data
+      - ./public/images/generated:/app/public/images/generated
     env_file:
       - .env
     labels:

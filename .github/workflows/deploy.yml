@@ -1,0 +1,72 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches:
+      - main
+      - master
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to server
+        uses: appleboy/ssh-action@v1.0.3
+        env:
+          DEPLOY_PATH: /home/azureuser/recipes
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT || 22 }}
+          envs: DEPLOY_PATH
+          script: |
+            set -e
+
+            cd $DEPLOY_PATH
+
+            # Save current image for rollback
+            CURRENT_IMAGE=$(docker images --format "{{.ID}}" recipes-recipes 2>/dev/null | head -1)
+            echo "Current image: $CURRENT_IMAGE"
+
+            # Pull latest code
+            git fetch origin
+            git reset --hard origin/main || git reset --hard origin/master
+
+            # Build new image
+            echo "Building new image..."
+            docker compose build --no-cache
+
+            # Stop old container and start new one
+            echo "Deploying new container..."
+            docker compose up -d
+
+            # Wait for container to be healthy
+            echo "Waiting for container to start..."
+            sleep 10
+
+            # Health check
+            if ! docker compose ps | grep -q "Up"; then
+              echo "Container failed to start, rolling back..."
+
+              # Rollback to previous image if available
+              if [ -n "$CURRENT_IMAGE" ]; then
+                docker tag $CURRENT_IMAGE recipes-recipes:latest
+                docker compose up -d
+              fi
+
+              exit 1
+            fi
+
+            # Cleanup old images
+            docker image prune -f
+
+            echo "Deployment successful!"
+
+      - name: Notify on failure
+        if: failure()
+        run: echo "Deployment failed! Check the logs above."

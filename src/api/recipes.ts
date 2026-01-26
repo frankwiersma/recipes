@@ -3,6 +3,8 @@ import { db, sqlite } from '../db/index';
 import { recipes, tags, recipeTags, mealHistory } from '../db/schema';
 import { eq, like, desc, sql } from 'drizzle-orm';
 import { scrapeRecipe } from '../services/scraper';
+import { isInstagramUrl, scrapeInstagramRecipe, parseInstagramCaption } from '../services/instagram';
+import { generateRecipeImage } from '../services/gemini';
 
 const app = new Hono();
 
@@ -194,9 +196,99 @@ app.post('/import/url', async (c) => {
   }
 
   try {
-    const scraped = await scrapeRecipe(url);
+    // Default seasons/weather based on category
+    const categoryDefaults: Record<string, { seasons: string[], weatherTags: string[] }> = {
+      'curry': { seasons: ['herfst', 'winter'], weatherTags: ['koud', 'regenachtig'] },
+      'soep': { seasons: ['herfst', 'winter'], weatherTags: ['koud', 'regenachtig'] },
+      'salade': { seasons: ['lente', 'zomer'], weatherTags: ['warm', 'zonnig'] },
+      'pokebowl': { seasons: ['lente', 'zomer'], weatherTags: ['warm', 'zonnig'] },
+      'pasta': { seasons: ['lente', 'zomer', 'herfst', 'winter'], weatherTags: [] },
+      'wraps': { seasons: ['lente', 'zomer'], weatherTags: ['warm'] },
+      'plaattaart': { seasons: ['herfst', 'winter'], weatherTags: ['koud'] },
+      'shakshuka': { seasons: ['lente', 'zomer', 'herfst', 'winter'], weatherTags: [] },
+    };
 
-    const slug = slugify(scraped.name);
+    let name: string;
+    let description: string | null;
+    let ingredients: any[];
+    let instructions: string[] | null;
+    let defaultServings: number;
+    let imageUrl: string | null;
+    let sourceType: string;
+    let prepTimeMinutes: number | null;
+    let cookTimeMinutes: number | null;
+    let detectedCategory: string | null = null;
+
+    // Check if this is an Instagram URL
+    if (isInstagramUrl(url)) {
+      const { recipe: instagramRecipe, post } = await scrapeInstagramRecipe(url);
+
+      name = instagramRecipe.name;
+      description = instagramRecipe.description;
+      ingredients = instagramRecipe.ingredients;
+      instructions = instagramRecipe.instructions;
+      defaultServings = instagramRecipe.servings;
+      imageUrl = post.displayUrl;
+      sourceType = 'instagram';
+      prepTimeMinutes = instagramRecipe.prepTimeMinutes;
+      cookTimeMinutes = instagramRecipe.cookTimeMinutes;
+      detectedCategory = instagramRecipe.category;
+    } else {
+      // Existing web scraper logic
+      const scraped = await scrapeRecipe(url);
+
+      name = scraped.name;
+      description = scraped.description;
+      ingredients = scraped.ingredients;
+      instructions = scraped.instructions;
+      defaultServings = scraped.defaultServings;
+      imageUrl = scraped.imageUrl;
+      sourceType = url.includes('picnic') ? 'picnic' : 'other';
+      prepTimeMinutes = scraped.prepTimeMinutes;
+      cookTimeMinutes = scraped.cookTimeMinutes;
+    }
+
+    const slug = slugify(name);
+
+    // Priority: user selection > Gemini detection > 'pasta' fallback
+    const finalCategory = category || detectedCategory || 'pasta';
+    const defaults = categoryDefaults[finalCategory] || { seasons: [], weatherTags: [] };
+
+    const [recipe] = await db.insert(recipes).values({
+      name,
+      slug,
+      description,
+      category: finalCategory,
+      ingredients: JSON.stringify(ingredients),
+      instructions: instructions ? JSON.stringify(instructions) : null,
+      defaultServings,
+      imageUrl,
+      sourceUrl: url,
+      sourceType,
+      seasons: JSON.stringify(defaults.seasons),
+      weatherTags: JSON.stringify(defaults.weatherTags),
+      prepTimeMinutes,
+      cookTimeMinutes,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }).returning();
+
+    return c.json(recipe, 201);
+  } catch (e) {
+    return c.json({ error: `Failed to scrape: ${e}` }, 500);
+  }
+});
+
+// POST /api/recipes/import/instagram - Import from Instagram caption text
+app.post('/import/instagram', async (c) => {
+  const { caption, url, category } = await c.req.json();
+
+  if (!caption) {
+    return c.json({ error: 'Caption text is required' }, 400);
+  }
+
+  try {
+    const { recipe: instagramRecipe, post } = await parseInstagramCaption(caption, url);
 
     // Default seasons/weather based on category
     const categoryDefaults: Record<string, { seasons: string[], weatherTags: string[] }> = {
@@ -210,30 +302,38 @@ app.post('/import/url', async (c) => {
       'shakshuka': { seasons: ['lente', 'zomer', 'herfst', 'winter'], weatherTags: [] },
     };
 
-    const defaults = categoryDefaults[category] || { seasons: [], weatherTags: [] };
+    const slug = slugify(instagramRecipe.name);
+
+    // Priority: user selection > Gemini detection > 'pasta' fallback
+    const finalCategory = category || instagramRecipe.category || 'pasta';
+    const defaults = categoryDefaults[finalCategory] || { seasons: [], weatherTags: [] };
+
+    // Generate recipe image using Gemini (nano banana)
+    const ingredientNames = instagramRecipe.ingredients.map(i => i.name);
+    const generatedImageUrl = await generateRecipeImage(instagramRecipe.name, ingredientNames);
 
     const [recipe] = await db.insert(recipes).values({
-      name: scraped.name,
+      name: instagramRecipe.name,
       slug,
-      description: scraped.description,
-      category: category || 'pasta',
-      ingredients: JSON.stringify(scraped.ingredients),
-      instructions: scraped.instructions ? JSON.stringify(scraped.instructions) : null,
-      defaultServings: scraped.defaultServings,
-      imageUrl: scraped.imageUrl,
-      sourceUrl: url,
-      sourceType: url.includes('picnic') ? 'picnic' : 'other',
+      description: instagramRecipe.description,
+      category: finalCategory,
+      ingredients: JSON.stringify(instagramRecipe.ingredients),
+      instructions: instagramRecipe.instructions ? JSON.stringify(instagramRecipe.instructions) : null,
+      defaultServings: instagramRecipe.servings,
+      imageUrl: generatedImageUrl || post.displayUrl || null,
+      sourceUrl: url || null,
+      sourceType: 'instagram',
       seasons: JSON.stringify(defaults.seasons),
       weatherTags: JSON.stringify(defaults.weatherTags),
-      prepTimeMinutes: scraped.prepTimeMinutes,
-      cookTimeMinutes: scraped.cookTimeMinutes,
+      prepTimeMinutes: instagramRecipe.prepTimeMinutes,
+      cookTimeMinutes: instagramRecipe.cookTimeMinutes,
       createdAt: new Date(),
       updatedAt: new Date(),
     }).returning();
 
     return c.json(recipe, 201);
   } catch (e) {
-    return c.json({ error: `Failed to scrape: ${e}` }, 500);
+    return c.json({ error: `Failed to parse Instagram recipe: ${e}` }, 500);
   }
 });
 
