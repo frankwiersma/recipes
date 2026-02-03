@@ -5,6 +5,7 @@ import recipesApi from './api/recipes';
 import suggestionsApi from './api/suggestions';
 import historyApi from './api/history';
 import tagsApi from './api/tags';
+import shoppingApi from './api/shopping';
 import { getCurrentWeather, getWeatherDescription, getWeekForecast } from './services/weather';
 
 // Get local date in YYYY-MM-DD format (not UTC)
@@ -29,6 +30,7 @@ app.route('/api/recipes', recipesApi);
 app.route('/api/suggestions', suggestionsApi);
 app.route('/api/history', historyApi);
 app.route('/api/tags', tagsApi);
+app.route('/api/shopping', shoppingApi);
 
 // Weather endpoint
 app.get('/api/weather', async (c) => {

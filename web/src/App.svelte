@@ -8,6 +8,7 @@
   import Geschiedenis from './pages/Geschiedenis.svelte';
   import Importeren from './pages/Importeren.svelte';
   import Instellingen from './pages/Instellingen.svelte';
+  import Boodschappen from './pages/Boodschappen.svelte';
 
   const routes = {
     '/': Home,
@@ -17,6 +18,7 @@
     '/geschiedenis': Geschiedenis,
     '/importeren': Importeren,
     '/instellingen': Instellingen,
+    '/boodschappen': Boodschappen,
   };
 </script>
 

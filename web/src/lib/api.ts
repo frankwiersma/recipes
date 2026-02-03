@@ -234,7 +234,27 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify({ recipeId }),
     }),
+
+  // Shopping list
+  getShoppingList: () =>
+    fetchJson<ShoppingListData>('/shopping'),
 };
+
+export interface ShoppingItem {
+  name: string;
+  displayName: string;
+  amount: number | null;
+  unit: string | null;
+  category: string;
+  sources: Array<{ recipeName: string; recipeId: number; amount: number | null; unit: string | null }>;
+}
+
+export interface ShoppingListData {
+  items: ShoppingItem[];
+  grouped: Record<string, ShoppingItem[]>;
+  recipes: Array<{ id: number; name: string; date: string; servings: number }>;
+  generatedAt: string;
+}
 
 export interface WeekDay {
   date: string;
