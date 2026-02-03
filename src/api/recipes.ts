@@ -18,6 +18,21 @@ function slugify(text: string): string {
     .replace(/^-+|-+$/g, '');
 }
 
+// Safe JSON parse - returns default if invalid
+function safeJsonParse<T>(value: unknown, defaultValue: T): T {
+  if (!value) return defaultValue;
+  if (typeof value !== 'string') return defaultValue;
+  try {
+    return JSON.parse(value);
+  } catch {
+    // If it's a string that looks like instructions, wrap in array
+    if (Array.isArray(defaultValue) && value.length > 0) {
+      return [value] as T;
+    }
+    return defaultValue;
+  }
+}
+
 // GET /api/recipes - List all recipes
 app.get('/', async (c) => {
   const category = c.req.query('category');
@@ -31,13 +46,13 @@ app.get('/', async (c) => {
 
   const results = await query.orderBy(desc(recipes.updatedAt));
 
-  // Parse JSON fields
+  // Parse JSON fields (with safe parsing for corrupted data)
   const parsed = results.map(r => ({
     ...r,
-    ingredients: r.ingredients ? JSON.parse(r.ingredients as string) : [],
-    instructions: r.instructions ? JSON.parse(r.instructions as string) : [],
-    seasons: r.seasons ? JSON.parse(r.seasons as string) : [],
-    weatherTags: r.weatherTags ? JSON.parse(r.weatherTags as string) : [],
+    ingredients: safeJsonParse(r.ingredients, []),
+    instructions: safeJsonParse(r.instructions, []),
+    seasons: safeJsonParse(r.seasons, []),
+    weatherTags: safeJsonParse(r.weatherTags, []),
   }));
 
   return c.json(parsed);
@@ -69,14 +84,14 @@ app.get('/search', async (c) => {
       slug: r.slug,
       description: r.description,
       category: r.category,
-      ingredients: r.ingredients ? JSON.parse(r.ingredients) : [],
-      instructions: r.instructions ? JSON.parse(r.instructions) : [],
+      ingredients: safeJsonParse(r.ingredients, []),
+      instructions: safeJsonParse(r.instructions, []),
       defaultServings: r.default_servings,
       imageUrl: r.image_url,
       sourceUrl: r.source_url,
       sourceType: r.source_type,
-      seasons: r.seasons ? JSON.parse(r.seasons) : [],
-      weatherTags: r.weather_tags ? JSON.parse(r.weather_tags) : [],
+      seasons: safeJsonParse(r.seasons, []),
+      weatherTags: safeJsonParse(r.weather_tags, []),
       prepTimeMinutes: r.prep_time_minutes,
       cookTimeMinutes: r.cook_time_minutes,
       createdAt: r.created_at,
@@ -92,10 +107,10 @@ app.get('/search', async (c) => {
 
     const parsed = results.map(r => ({
       ...r,
-      ingredients: r.ingredients ? JSON.parse(r.ingredients as string) : [],
-      instructions: r.instructions ? JSON.parse(r.instructions as string) : [],
-      seasons: r.seasons ? JSON.parse(r.seasons as string) : [],
-      weatherTags: r.weatherTags ? JSON.parse(r.weatherTags as string) : [],
+      ingredients: safeJsonParse(r.ingredients, []),
+      instructions: safeJsonParse(r.instructions, []),
+      seasons: safeJsonParse(r.seasons, []),
+      weatherTags: safeJsonParse(r.weatherTags, []),
     }));
 
     return c.json(parsed);
@@ -129,10 +144,10 @@ app.get('/:id', async (c) => {
 
   return c.json({
     ...recipe,
-    ingredients: recipe.ingredients ? JSON.parse(recipe.ingredients as string) : [],
-    instructions: recipe.instructions ? JSON.parse(recipe.instructions as string) : [],
-    seasons: recipe.seasons ? JSON.parse(recipe.seasons as string) : [],
-    weatherTags: recipe.weatherTags ? JSON.parse(recipe.weatherTags as string) : [],
+    ingredients: safeJsonParse(recipe.ingredients, []),
+    instructions: safeJsonParse(recipe.instructions, []),
+    seasons: safeJsonParse(recipe.seasons, []),
+    weatherTags: safeJsonParse(recipe.weatherTags, []),
     tags: recipeTags_.map(rt => rt.tag),
     lastEaten: lastEaten?.eatenAt || null,
   });
@@ -385,10 +400,10 @@ app.post('/:id/rescrape', async (c) => {
 
     return c.json({
       ...recipe,
-      ingredients: recipe.ingredients ? JSON.parse(recipe.ingredients as string) : [],
-      instructions: recipe.instructions ? JSON.parse(recipe.instructions as string) : [],
-      seasons: recipe.seasons ? JSON.parse(recipe.seasons as string) : [],
-      weatherTags: recipe.weatherTags ? JSON.parse(recipe.weatherTags as string) : [],
+      ingredients: safeJsonParse(recipe.ingredients, []),
+      instructions: safeJsonParse(recipe.instructions, []),
+      seasons: safeJsonParse(recipe.seasons, []),
+      weatherTags: safeJsonParse(recipe.weatherTags, []),
     });
   } catch (e) {
     return c.json({ error: `Failed to scrape: ${e}` }, 500);

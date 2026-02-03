@@ -5,6 +5,20 @@ import { eq, desc } from 'drizzle-orm';
 import { getTodaySuggestion, acceptSuggestion, rejectSuggestion, generateSuggestion } from '../services/suggestion';
 import { getCurrentWeather, getWeatherDescription } from '../services/weather';
 
+// Safe JSON parse - returns default if invalid
+function safeJsonParse<T>(value: unknown, defaultValue: T): T {
+  if (!value) return defaultValue;
+  if (typeof value !== 'string') return defaultValue;
+  try {
+    return JSON.parse(value);
+  } catch {
+    if (Array.isArray(defaultValue) && value.length > 0) {
+      return [value] as T;
+    }
+    return defaultValue;
+  }
+}
+
 const app = new Hono();
 
 // GET /api/suggestions/today - Get today's suggestion
@@ -22,10 +36,10 @@ app.get('/today', async (c) => {
       },
       recipe: {
         ...recipe,
-        ingredients: recipe?.ingredients ? JSON.parse(recipe.ingredients as string) : [],
-        instructions: recipe?.instructions ? JSON.parse(recipe.instructions as string) : [],
-        seasons: recipe?.seasons ? JSON.parse(recipe.seasons as string) : [],
-        weatherTags: recipe?.weatherTags ? JSON.parse(recipe.weatherTags as string) : [],
+        ingredients: safeJsonParse(recipe?.ingredients, []),
+        instructions: safeJsonParse(recipe?.instructions, []),
+        seasons: safeJsonParse(recipe?.seasons, []),
+        weatherTags: safeJsonParse(recipe?.weatherTags, []),
       },
       weatherDescription: weather ? getWeatherDescription(weather) : null,
     });
@@ -42,10 +56,10 @@ app.post('/generate', async (c) => {
     return c.json({
       recipe: {
         ...recipe,
-        ingredients: recipe.ingredients ? JSON.parse(recipe.ingredients as string) : [],
-        instructions: recipe.instructions ? JSON.parse(recipe.instructions as string) : [],
-        seasons: recipe.seasons ? JSON.parse(recipe.seasons as string) : [],
-        weatherTags: recipe.weatherTags ? JSON.parse(recipe.weatherTags as string) : [],
+        ingredients: safeJsonParse(recipe.ingredients, []),
+        instructions: safeJsonParse(recipe.instructions, []),
+        seasons: safeJsonParse(recipe.seasons, []),
+        weatherTags: safeJsonParse(recipe.weatherTags, []),
       },
       score: score.breakdown,
       weather,
@@ -80,10 +94,10 @@ app.put('/:id/reject', async (c) => {
       },
       recipe: {
         ...recipe,
-        ingredients: recipe.ingredients ? JSON.parse(recipe.ingredients as string) : [],
-        instructions: recipe.instructions ? JSON.parse(recipe.instructions as string) : [],
-        seasons: recipe.seasons ? JSON.parse(recipe.seasons as string) : [],
-        weatherTags: recipe.weatherTags ? JSON.parse(recipe.weatherTags as string) : [],
+        ingredients: safeJsonParse(recipe.ingredients, []),
+        instructions: safeJsonParse(recipe.instructions, []),
+        seasons: safeJsonParse(recipe.seasons, []),
+        weatherTags: safeJsonParse(recipe.weatherTags, []),
       },
     });
   } catch (e) {
