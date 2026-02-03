@@ -187,6 +187,88 @@ app.get('/api/weekplan', async (c) => {
   }
 });
 
+// Set specific recipe for a day (manual planning)
+app.put('/api/weekplan/:date', async (c) => {
+  try {
+    const date = c.req.param('date');
+    const { recipeId } = await c.req.json();
+
+    if (!recipeId || typeof recipeId !== 'number') {
+      return c.json({ error: 'recipeId is required' }, 400);
+    }
+
+    const { db } = await import('./db/index');
+    const { recipes, weekPlan, suggestions } = await import('./db/schema');
+    const { getCurrentWeather } = await import('./services/weather');
+    const { eq } = await import('drizzle-orm');
+
+    // Verify recipe exists
+    const recipe = await db.query.recipes.findFirst({
+      where: eq(recipes.id, recipeId),
+    });
+
+    if (!recipe) {
+      return c.json({ error: 'Recipe not found' }, 404);
+    }
+
+    const today = getLocalDateString();
+    const isToday = date === today;
+
+    if (isToday) {
+      // For today, update suggestions table
+      const weather = await getCurrentWeather();
+
+      // Mark previous suggestions as rejected
+      await db.update(suggestions)
+        .set({ status: 'rejected' })
+        .where(eq(suggestions.suggestedFor, date));
+
+      // Create new suggestion with accepted status (manually chosen)
+      await db.insert(suggestions).values({
+        recipeId: recipe.id,
+        suggestedFor: date,
+        status: 'accepted',
+        reason: JSON.stringify({ manual: true }),
+        weatherData: JSON.stringify(weather),
+        createdAt: new Date(),
+      });
+    } else {
+      // For other days, update/insert week_plan
+      const currentPlan = await db.query.weekPlan.findFirst({
+        where: eq(weekPlan.date, date),
+      });
+
+      if (currentPlan) {
+        await db.update(weekPlan)
+          .set({ recipeId: recipe.id })
+          .where(eq(weekPlan.date, date));
+      } else {
+        await db.insert(weekPlan).values({
+          date,
+          recipeId: recipe.id,
+          temp: 0,
+          icon: '01d',
+          description: '',
+          createdAt: new Date(),
+        });
+      }
+    }
+
+    return c.json({
+      success: true,
+      date,
+      recipe: {
+        id: recipe.id,
+        name: recipe.name,
+        category: recipe.category,
+        imageUrl: recipe.imageUrl,
+      },
+    });
+  } catch (e) {
+    return c.json({ error: `Set recipe error: ${e}` }, 500);
+  }
+});
+
 // Regenerate suggestion for a specific day
 app.post('/api/weekplan/:date/regenerate', async (c) => {
   try {

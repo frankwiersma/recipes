@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { api, type Recipe } from '../lib/api';
   import RecipeCard from '../lib/RecipeCard.svelte';
+  import DayPickerModal from '../lib/DayPickerModal.svelte';
 
   let recipes: Recipe[] = $state([]);
   let filteredRecipes: Recipe[] = $state([]);
@@ -9,6 +10,8 @@
   let searchQuery = $state('');
   let selectedCategory = $state('');
   let selectedSeason = $state('');
+  let planningRecipe: Recipe | null = $state(null);
+  let successMessage = $state<string | null>(null);
 
   const categories = ['curry', 'soep', 'pasta', 'salade', 'pokebowl', 'wraps', 'plaattaart', 'shakshuka'];
   const seasons = ['lente', 'zomer', 'herfst', 'winter'];
@@ -71,6 +74,21 @@
   function onSeasonChange(e: Event) {
     selectedSeason = (e.target as HTMLSelectElement).value;
     filterRecipes();
+  }
+
+  function openPlanner(recipe: Recipe) {
+    planningRecipe = recipe;
+  }
+
+  function closePlanner() {
+    planningRecipe = null;
+  }
+
+  function onPlanSuccess(date: string) {
+    const dayNames = ['zondag', 'maandag', 'dinsdag', 'woensdag', 'donderdag', 'vrijdag', 'zaterdag'];
+    const dayName = dayNames[new Date(date).getDay()];
+    successMessage = `${planningRecipe?.name} ingepland voor ${dayName}!`;
+    setTimeout(() => successMessage = null, 3000);
   }
 </script>
 
@@ -153,8 +171,24 @@
   {:else}
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
       {#each filteredRecipes as recipe (recipe.id)}
-        <RecipeCard {recipe} />
+        <RecipeCard {recipe} onPlan={openPlanner} />
       {/each}
     </div>
   {/if}
 </div>
+
+<!-- Success message -->
+{#if successMessage}
+  <div class="fixed bottom-4 right-4 bg-green-500 text-white px-4 py-3 rounded-lg shadow-lg z-50 animate-fade-in">
+    ✓ {successMessage}
+  </div>
+{/if}
+
+<!-- Day picker modal -->
+{#if planningRecipe}
+  <DayPickerModal
+    recipe={planningRecipe}
+    onClose={closePlanner}
+    onSuccess={onPlanSuccess}
+  />
+{/if}

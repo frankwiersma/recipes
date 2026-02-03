@@ -228,6 +228,12 @@ export const api = {
     fetchJson<{ date: string; recipe: { id: number; name: string; category: string; imageUrl?: string } }>(`/weekplan/${date}/regenerate`, {
       method: 'POST',
     }),
+
+  setDayRecipe: (date: string, recipeId: number) =>
+    fetchJson<{ success: boolean; date: string; recipe: { id: number; name: string; category: string; imageUrl?: string } }>(`/weekplan/${date}`, {
+      method: 'PUT',
+      body: JSON.stringify({ recipeId }),
+    }),
 };
 
 export interface WeekDay {

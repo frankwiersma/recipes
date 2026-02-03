@@ -3,7 +3,12 @@
   import type { Recipe } from './api';
   import { getSourceDisplayName } from './api';
 
-  let { recipe }: { recipe: Recipe } = $props();
+  interface Props {
+    recipe: Recipe;
+    onPlan?: (recipe: Recipe) => void;
+  }
+
+  let { recipe, onPlan }: Props = $props();
 
   function getCategoryColor(category: string): string {
     const colors: Record<string, string> = {
@@ -68,5 +73,17 @@
         <span class="text-xs text-gray-400 px-1 py-0.5">via {sourceName}</span>
       {/if}
     </div>
+
+    {#if onPlan}
+      <button
+        onclick={(e) => { e.preventDefault(); e.stopPropagation(); onPlan(recipe); }}
+        class="mt-3 w-full flex items-center justify-center gap-1.5 py-2 px-3 bg-orange-50 hover:bg-orange-100 text-orange-600 text-sm font-medium rounded-lg transition-colors"
+      >
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+        </svg>
+        Inplannen
+      </button>
+    {/if}
   </div>
 </a>

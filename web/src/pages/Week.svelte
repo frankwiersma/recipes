@@ -2,11 +2,13 @@
   import { onMount, onDestroy } from 'svelte';
   import { link } from 'svelte-spa-router';
   import { api, type WeekDay } from '../lib/api';
+  import RecipePickerModal from '../lib/RecipePickerModal.svelte';
 
   let weekPlan: WeekDay[] = $state([]);
   let loading = $state(true);
   let regenerating: string | null = $state(null);
   let midnightCheckInterval: ReturnType<typeof setInterval>;
+  let pickingDay: { date: string; dayName: string } | null = $state(null);
 
   // Get local date in YYYY-MM-DD format (not UTC)
   function getLocalDateString(): string {
@@ -66,6 +68,21 @@
       'pokebowl': '🥙', 'wraps': '🌯', 'plaattaart': '🥧', 'shakshuka': '🍳',
     };
     return emojis[category] || '🍽️';
+  }
+
+  function openPicker(day: WeekDay) {
+    pickingDay = { date: day.date, dayName: day.dayName };
+  }
+
+  function closePicker() {
+    pickingDay = null;
+  }
+
+  function onPickSuccess(recipe: { id: number; name: string; category: string; imageUrl?: string }) {
+    if (!pickingDay) return;
+    weekPlan = weekPlan.map(day =>
+      day.date === pickingDay!.date ? { ...day, recipe, status: 'accepted' } : day
+    );
   }
 </script>
 
@@ -135,17 +152,26 @@
             </div>
           {/if}
 
-          <!-- Refresh button -->
-          <div class="border-t border-gray-100 px-3 py-2">
+          <!-- Action buttons -->
+          <div class="border-t border-gray-100 px-3 py-2 flex gap-2">
+            <button
+              onclick={() => openPicker(day)}
+              class="flex-1 flex items-center justify-center gap-1.5 text-xs text-gray-500 hover:text-blue-600 transition-colors"
+            >
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+              Kies
+            </button>
             <button
               onclick={() => regenerateDay(day.date)}
               disabled={regenerating === day.date}
-              class="w-full flex items-center justify-center gap-1.5 text-xs text-gray-500 hover:text-orange-600 transition-colors disabled:opacity-50"
+              class="flex-1 flex items-center justify-center gap-1.5 text-xs text-gray-500 hover:text-orange-600 transition-colors disabled:opacity-50"
             >
               <svg class="w-3.5 h-3.5 {regenerating === day.date ? 'animate-spin' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
               </svg>
-              Andere suggestie
+              Random
             </button>
           </div>
         </div>
@@ -153,3 +179,13 @@
     </div>
   {/if}
 </div>
+
+<!-- Recipe picker modal -->
+{#if pickingDay}
+  <RecipePickerModal
+    date={pickingDay.date}
+    dayName={pickingDay.dayName}
+    onClose={closePicker}
+    onSuccess={onPickSuccess}
+  />
+{/if}

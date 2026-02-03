@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { link } from 'svelte-spa-router';
   import { api, type Recipe } from '../lib/api';
+  import DayPickerModal from '../lib/DayPickerModal.svelte';
 
   let { params }: { params: { id: string } } = $props();
 
@@ -13,6 +14,8 @@
   let logSuccess = $state(false);
   let editingImage = $state(false);
   let newImageUrl = $state('');
+  let showPlanner = $state(false);
+  let planSuccess = $state<string | null>(null);
 
   let scaleFactor = $derived(recipe ? servings / recipe.defaultServings : 1);
 
@@ -118,6 +121,13 @@
   function cancelEditImage() {
     editingImage = false;
     newImageUrl = '';
+  }
+
+  function onPlanSuccess(date: string) {
+    const dayNames = ['zondag', 'maandag', 'dinsdag', 'woensdag', 'donderdag', 'vrijdag', 'zaterdag'];
+    const dayName = dayNames[new Date(date).getDay()];
+    planSuccess = `Ingepland voor ${dayName}!`;
+    setTimeout(() => planSuccess = null, 3000);
   }
 </script>
 
@@ -334,6 +344,23 @@
                 Dit heb ik gegeten
               {/if}
             </button>
+
+            <button
+              onclick={() => showPlanner = true}
+              class="w-full py-3 px-4 bg-blue-500 text-white rounded-xl font-semibold hover:bg-blue-600 transition-colors flex items-center justify-center gap-2"
+            >
+              {#if planSuccess}
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                </svg>
+                {planSuccess}
+              {:else}
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+                Plan dit recept
+              {/if}
+            </button>
           </div>
 
           {#if recipe.lastEaten}
@@ -350,3 +377,12 @@
     </div>
   {/if}
 </div>
+
+<!-- Day picker modal -->
+{#if showPlanner && recipe}
+  <DayPickerModal
+    {recipe}
+    onClose={() => showPlanner = false}
+    onSuccess={onPlanSuccess}
+  />
+{/if}
