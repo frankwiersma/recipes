@@ -235,6 +235,11 @@ export const api = {
       body: JSON.stringify({ recipeId }),
     }),
 
+  clearDayRecipe: (date: string) =>
+    fetchJson<{ success: boolean; date: string; recipe: null }>(`/weekplan/${date}`, {
+      method: 'DELETE',
+    }),
+
   // Shopping list
   getShoppingList: () =>
     fetchJson<ShoppingListData>('/shopping'),

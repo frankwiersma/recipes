@@ -7,6 +7,7 @@
   let weekPlan: WeekDay[] = $state([]);
   let loading = $state(true);
   let regenerating: string | null = $state(null);
+  let clearing: string | null = $state(null);
   let midnightCheckInterval: ReturnType<typeof setInterval>;
   let pickingDay: { date: string; dayName: string } | null = $state(null);
 
@@ -54,12 +55,25 @@
     try {
       const result = await api.regenerateDay(date);
       weekPlan = weekPlan.map(day =>
-        day.date === date ? { ...day, recipe: result.recipe } : day
+        day.date === date ? { ...day, recipe: result.recipe, status: undefined } : day
       );
     } catch (e) {
       console.error('Kon niet regenereren:', e);
     }
     regenerating = null;
+  }
+
+  async function clearDay(date: string) {
+    clearing = date;
+    try {
+      await api.clearDayRecipe(date);
+      weekPlan = weekPlan.map(day =>
+        day.date === date ? { ...day, recipe: null, status: 'cleared' } : day
+      );
+    } catch (e) {
+      console.error('Kon niet leegmaken:', e);
+    }
+    clearing = null;
   }
 
   function getCategoryEmoji(category: string): string {
@@ -147,16 +161,21 @@
               </div>
             </a>
           {:else}
-            <div class="p-4 text-center text-gray-400 h-32 flex items-center justify-center">
-              Geen suggestie
+            <div class="p-4 text-center h-32 flex flex-col items-center justify-center">
+              {#if day.status === 'cleared'}
+                <span class="text-2xl mb-1">🍽️</span>
+                <span class="text-gray-400 text-sm">Vrije dag</span>
+              {:else}
+                <span class="text-gray-400">Geen recept</span>
+              {/if}
             </div>
           {/if}
 
           <!-- Action buttons -->
-          <div class="border-t border-gray-100 px-3 py-2 flex gap-2">
+          <div class="border-t border-gray-100 px-2 py-2 flex gap-1">
             <button
               onclick={() => openPicker(day)}
-              class="flex-1 flex items-center justify-center gap-1.5 text-xs text-gray-500 hover:text-blue-600 transition-colors"
+              class="flex-1 flex items-center justify-center gap-1 text-xs text-gray-500 hover:text-blue-600 transition-colors py-1"
             >
               <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -166,13 +185,29 @@
             <button
               onclick={() => regenerateDay(day.date)}
               disabled={regenerating === day.date}
-              class="flex-1 flex items-center justify-center gap-1.5 text-xs text-gray-500 hover:text-orange-600 transition-colors disabled:opacity-50"
+              class="flex-1 flex items-center justify-center gap-1 text-xs text-gray-500 hover:text-orange-600 transition-colors disabled:opacity-50 py-1"
             >
               <svg class="w-3.5 h-3.5 {regenerating === day.date ? 'animate-spin' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
               </svg>
               Random
             </button>
+            {#if day.recipe || day.status !== 'cleared'}
+              <button
+                onclick={() => clearDay(day.date)}
+                disabled={clearing === day.date}
+                class="flex-1 flex items-center justify-center gap-1 text-xs text-gray-500 hover:text-red-500 transition-colors disabled:opacity-50 py-1"
+              >
+                {#if clearing === day.date}
+                  <div class="w-3.5 h-3.5 border-2 border-red-400 border-t-transparent rounded-full animate-spin"></div>
+                {:else}
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                {/if}
+                Leeg
+              </button>
+            {/if}
           </div>
         </div>
       {/each}

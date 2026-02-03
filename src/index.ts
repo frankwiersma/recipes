@@ -91,6 +91,21 @@ app.get('/api/weekplan', async (c) => {
       // For today, use the current suggestion from suggestions table
       if (day.date === today && todaySuggestion.length > 0) {
         const suggestion = todaySuggestion[0];
+        
+        // If cleared, show empty day
+        if (suggestion.status === 'cleared') {
+          result.push({
+            date: day.date,
+            dayName: dayNames[new Date(day.date).getDay()],
+            temp: day.temp,
+            icon: day.icon,
+            description: day.description,
+            status: 'cleared',
+            recipe: null,
+          });
+          continue;
+        }
+        
         const recipe = allRecipes.find(r => r.id === suggestion.recipeId);
         if (recipe) {
           usedRecipeIds.push(recipe.id);
@@ -268,6 +283,39 @@ app.put('/api/weekplan/:date', async (c) => {
     });
   } catch (e) {
     return c.json({ error: `Set recipe error: ${e}` }, 500);
+  }
+});
+
+// Clear recipe for a day (set to empty)
+app.delete('/api/weekplan/:date', async (c) => {
+  try {
+    const date = c.req.param('date');
+
+    const { db } = await import('./db/index');
+    const { weekPlan, suggestions } = await import('./db/schema');
+    const { eq } = await import('drizzle-orm');
+
+    const today = getLocalDateString();
+    const isToday = date === today;
+
+    if (isToday) {
+      // For today, mark all suggestions as rejected (clears the day)
+      await db.update(suggestions)
+        .set({ status: 'cleared' })
+        .where(eq(suggestions.suggestedFor, date));
+    } else {
+      // For other days, delete from week_plan
+      await db.delete(weekPlan)
+        .where(eq(weekPlan.date, date));
+    }
+
+    return c.json({
+      success: true,
+      date,
+      recipe: null,
+    });
+  } catch (e) {
+    return c.json({ error: `Clear recipe error: ${e}` }, 500);
   }
 });
 
