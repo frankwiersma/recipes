@@ -298,9 +298,24 @@ app.post('/import/url', async (c) => {
       cookTimeMinutes,
       createdAt: new Date(),
       updatedAt: new Date(),
+    }).onConflictDoUpdate({
+      target: recipes.slug,
+      set: {
+        description,
+        category: finalCategory,
+        ingredients: JSON.stringify(ingredients),
+        instructions: instructions ? JSON.stringify(instructions) : null,
+        defaultServings,
+        imageUrl,
+        sourceUrl: url,
+        prepTimeMinutes,
+        cookTimeMinutes,
+        updatedAt: new Date(),
+      },
     }).returning();
 
-    return c.json(recipe, 201);
+    const isUpdate = recipe.createdAt?.getTime() !== recipe.updatedAt?.getTime();
+    return c.json(recipe, isUpdate ? 200 : 201);
   } catch (e) {
     return c.json({ error: `Failed to scrape: ${e}` }, 500);
   }
@@ -356,9 +371,23 @@ app.post('/import/instagram', async (c) => {
       cookTimeMinutes: instagramRecipe.cookTimeMinutes,
       createdAt: new Date(),
       updatedAt: new Date(),
+    }).onConflictDoUpdate({
+      target: recipes.slug,
+      set: {
+        description: instagramRecipe.description,
+        category: finalCategory,
+        ingredients: JSON.stringify(instagramRecipe.ingredients),
+        instructions: instagramRecipe.instructions ? JSON.stringify(instagramRecipe.instructions) : null,
+        defaultServings: instagramRecipe.servings,
+        imageUrl: generatedImageUrl || post.displayUrl || null,
+        prepTimeMinutes: instagramRecipe.prepTimeMinutes,
+        cookTimeMinutes: instagramRecipe.cookTimeMinutes,
+        updatedAt: new Date(),
+      },
     }).returning();
 
-    return c.json(recipe, 201);
+    const isUpdate = recipe.createdAt?.getTime() !== recipe.updatedAt?.getTime();
+    return c.json(recipe, isUpdate ? 200 : 201);
   } catch (e) {
     return c.json({ error: `Failed to parse Instagram recipe: ${e}` }, 500);
   }
