@@ -19,11 +19,25 @@ function slugify(text: string): string {
 }
 
 // Safe JSON parse - returns default if invalid
+// Handles double-encoded JSON (from Drizzle mode:'json' + manual JSON.stringify)
 function safeJsonParse<T>(value: unknown, defaultValue: T): T {
   if (!value) return defaultValue;
-  if (typeof value !== 'string') return defaultValue;
+  if (typeof value !== 'string') {
+    // Already parsed (e.g. by Drizzle), check if it needs another round
+    if (typeof value === 'string') return safeJsonParse(value, defaultValue);
+    return value as T;
+  }
   try {
-    return JSON.parse(value);
+    let parsed = JSON.parse(value);
+    // Handle double-encoded JSON: if result is still a string, parse again
+    if (typeof parsed === 'string') {
+      try {
+        parsed = JSON.parse(parsed);
+      } catch {
+        // Single string value, not double-encoded
+      }
+    }
+    return parsed;
   } catch {
     // If it's a string that looks like instructions, wrap in array
     if (Array.isArray(defaultValue) && value.length > 0) {
