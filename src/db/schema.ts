@@ -110,7 +110,8 @@ export const suggestions = sqliteTable('suggestions', {
 export const weekPlan = sqliteTable('week_plan', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   date: text('date').notNull().unique(), // YYYY-MM-DD
-  recipeId: integer('recipe_id').notNull().references(() => recipes.id, { onDelete: 'cascade' }),
+  recipeId: integer('recipe_id').references(() => recipes.id, { onDelete: 'cascade' }),
+  cleared: integer('cleared', { mode: 'boolean' }).default(false),
   temp: integer('temp'),
   icon: text('icon'),
   description: text('description'),

@@ -133,8 +133,22 @@ app.get('/api/weekplan', async (c) => {
       });
 
       if (stored) {
-        const recipe = allRecipes.find(r => r.id === stored.recipeId);
-        usedRecipeIds.push(stored.recipeId);
+        // If day was cleared, show empty
+        if (stored.cleared) {
+          result.push({
+            date: day.date,
+            dayName: dayNames[new Date(day.date).getDay()],
+            temp: stored.temp ?? day.temp,
+            icon: stored.icon ?? day.icon,
+            description: stored.description ?? day.description,
+            status: 'cleared',
+            recipe: null,
+          });
+          continue;
+        }
+
+        const recipe = stored.recipeId ? allRecipes.find(r => r.id === stored.recipeId) : null;
+        if (stored.recipeId) usedRecipeIds.push(stored.recipeId);
         result.push({
           date: day.date,
           dayName: dayNames[new Date(day.date).getDay()],
@@ -257,12 +271,13 @@ app.put('/api/weekplan/:date', async (c) => {
 
       if (currentPlan) {
         await db.update(weekPlan)
-          .set({ recipeId: recipe.id })
+          .set({ recipeId: recipe.id, cleared: false })
           .where(eq(weekPlan.date, date));
       } else {
         await db.insert(weekPlan).values({
           date,
           recipeId: recipe.id,
+          cleared: false,
           temp: 0,
           icon: '01d',
           description: '',
@@ -299,14 +314,28 @@ app.delete('/api/weekplan/:date', async (c) => {
     const isToday = date === today;
 
     if (isToday) {
-      // For today, mark all suggestions as rejected (clears the day)
+      // For today, mark all suggestions as cleared
       await db.update(suggestions)
         .set({ status: 'cleared' })
         .where(eq(suggestions.suggestedFor, date));
-    } else {
-      // For other days, delete from week_plan
-      await db.delete(weekPlan)
+    }
+
+    // Mark day as cleared in week_plan (upsert)
+    const existing = await db.query.weekPlan.findFirst({
+      where: eq(weekPlan.date, date),
+    });
+
+    if (existing) {
+      await db.update(weekPlan)
+        .set({ cleared: true, recipeId: null })
         .where(eq(weekPlan.date, date));
+    } else {
+      await db.insert(weekPlan).values({
+        date,
+        recipeId: null,
+        cleared: true,
+        createdAt: new Date(),
+      });
     }
 
     return c.json({
@@ -436,6 +465,25 @@ app.use('/*', serveStatic({ root: './web/dist' }));
 
 // Fallback to index.html for SPA routing
 app.get('*', serveStatic({ path: './web/dist/index.html' }));
+
+// Run migrations on startup
+try {
+  const { Database } = await import('bun:sqlite');
+  const migDb = new Database('./data/recipes.sqlite');
+  // Add cleared column + make recipe_id nullable
+  try { migDb.run(`ALTER TABLE week_plan ADD COLUMN cleared INTEGER DEFAULT 0`); } catch {}
+  // Check if recipe_id is still NOT NULL — recreate table if needed
+  const tableInfo = migDb.prepare(`PRAGMA table_info(week_plan)`).all() as any[];
+  const recipeIdCol = tableInfo.find((c: any) => c.name === 'recipe_id');
+  if (recipeIdCol && recipeIdCol.notnull === 1) {
+    migDb.run(`CREATE TABLE IF NOT EXISTS week_plan_new (id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT NOT NULL UNIQUE, recipe_id INTEGER REFERENCES recipes(id) ON DELETE CASCADE, cleared INTEGER DEFAULT 0, temp INTEGER, icon TEXT, description TEXT, created_at INTEGER NOT NULL DEFAULT (unixepoch()))`);
+    migDb.run(`INSERT OR IGNORE INTO week_plan_new SELECT id, date, recipe_id, COALESCE(cleared, 0), temp, icon, description, created_at FROM week_plan`);
+    migDb.run(`DROP TABLE week_plan`);
+    migDb.run(`ALTER TABLE week_plan_new RENAME TO week_plan`);
+    console.log('Migrated week_plan: recipe_id nullable + cleared column');
+  }
+  migDb.close();
+} catch (e) { console.warn('Migration check:', e); }
 
 const port = parseInt(process.env.PORT || '3000');
 
