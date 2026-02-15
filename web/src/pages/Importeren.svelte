@@ -88,6 +88,25 @@
     mode = newMode;
     error = '';
   }
+
+  // Extract URL from pasted text (e.g. Picnic share messages)
+  function extractUrl(text: string): string {
+    const trimmed = text.trim();
+    // If it already looks like a URL, return as-is
+    if (/^https?:\/\//.test(trimmed) && !trimmed.includes(' ')) return trimmed;
+    // Extract first URL from text
+    const match = trimmed.match(/https?:\/\/[^\s]+/);
+    return match ? match[0] : trimmed;
+  }
+
+  function onUrlPaste(e: ClipboardEvent) {
+    const pasted = e.clipboardData?.getData('text') || '';
+    const extracted = extractUrl(pasted);
+    if (extracted !== pasted.trim()) {
+      e.preventDefault();
+      url = extracted;
+    }
+  }
 </script>
 
 <div class="max-w-2xl mx-auto">
@@ -142,9 +161,10 @@
             </label>
             <input
               id="url"
-              type="url"
+              type="text"
               bind:value={url}
-              placeholder="https://www.picnic.app/nl/recepten/..."
+              onpaste={onUrlPaste}
+              placeholder="Plak een URL of gedeelde tekst van Picnic, AH, etc."
               class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
               disabled={loading}
             />

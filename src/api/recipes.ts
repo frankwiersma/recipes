@@ -214,9 +214,19 @@ app.delete('/:id', async (c) => {
   return c.json({ success: true });
 });
 
+// Extract URL from shared text (e.g. Picnic share: "Ik kwam een lekker recept... https://picnic.app/nl/go/xxx")
+function extractUrl(input: string): string {
+  const trimmed = input.trim();
+  if (/^https?:\/\//i.test(trimmed) && !trimmed.includes(' ')) return trimmed;
+  const match = trimmed.match(/https?:\/\/[^\s]+/i);
+  return match ? match[0] : trimmed;
+}
+
 // POST /api/recipes/import/url - Import from URL
 app.post('/import/url', async (c) => {
-  const { url, category } = await c.req.json();
+  const body = await c.req.json();
+  const url = body.url ? extractUrl(body.url) : '';
+  const category = body.category;
 
   if (!url) {
     return c.json({ error: 'URL is required' }, 400);
