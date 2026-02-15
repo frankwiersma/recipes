@@ -445,6 +445,16 @@ app.post('/api/weekplan/:date/regenerate', async (c) => {
         weatherData: JSON.stringify(weather),
         createdAt: new Date(),
       });
+
+      // Also reset cleared flag in weekPlan if it exists
+      const existingPlan = await db.query.weekPlan.findFirst({
+        where: eq(weekPlan.date, date),
+      });
+      if (existingPlan) {
+        await db.update(weekPlan)
+          .set({ cleared: false, recipeId: newRecipe.id })
+          .where(eq(weekPlan.date, date));
+      }
     } else {
       // For other days, update the week_plan table
       const currentPlan = await db.query.weekPlan.findFirst({
@@ -453,7 +463,7 @@ app.post('/api/weekplan/:date/regenerate', async (c) => {
 
       if (currentPlan) {
         await db.update(weekPlan)
-          .set({ recipeId: newRecipe.id })
+          .set({ recipeId: newRecipe.id, cleared: false })
           .where(eq(weekPlan.date, date));
       } else {
         await db.insert(weekPlan).values({
