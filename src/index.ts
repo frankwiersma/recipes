@@ -355,19 +355,46 @@ app.post('/api/weekplan/:date/regenerate', async (c) => {
     const { db } = await import('./db/index');
     const { recipes, weekPlan, suggestions } = await import('./db/schema');
     const { getCurrentSeason, getCurrentWeather, getWeatherTags } = await import('./services/weather');
-    const { eq, ne } = await import('drizzle-orm');
+    const { eq, ne, and, inArray, desc } = await import('drizzle-orm');
 
     const today = getLocalDateString();
     const isToday = date === today;
 
-    // Get all recipes used in the current week (excluding this date)
+    // Build list of all 7 dates in the current week plan
+    const weekDates: string[] = [];
+    const d = new Date();
+    for (let i = 0; i < 7; i++) {
+      const dd = new Date(d);
+      dd.setDate(d.getDate() + i);
+      weekDates.push(`${dd.getFullYear()}-${String(dd.getMonth() + 1).padStart(2, '0')}-${String(dd.getDate()).padStart(2, '0')}`);
+    }
+
+    // Get all recipes used in the current week from weekPlan (excluding this date)
     const otherPlans = await db.select()
       .from(weekPlan)
       .where(ne(weekPlan.date, date));
 
-    const usedRecipeIds = otherPlans.map(p => p.recipeId);
+    // Only include plans for THIS week's dates, and filter out nulls (cleared days)
+    const weekDateSet = new Set(weekDates);
+    const usedRecipeIds: number[] = otherPlans
+      .filter(p => weekDateSet.has(p.date) && p.recipeId != null)
+      .map(p => p.recipeId!);
 
-    // Also exclude today's previous suggestions
+    // Always check today's active suggestion (stored in suggestions table, not weekPlan)
+    if (date !== today) {
+      const todaySuggestion = await db.select()
+        .from(suggestions)
+        .where(eq(suggestions.suggestedFor, today))
+        .orderBy(desc(suggestions.createdAt))
+        .limit(1);
+      if (todaySuggestion.length > 0 && todaySuggestion[0].status !== 'cleared' && todaySuggestion[0].status !== 'rejected') {
+        if (!usedRecipeIds.includes(todaySuggestion[0].recipeId)) {
+          usedRecipeIds.push(todaySuggestion[0].recipeId);
+        }
+      }
+    }
+
+    // If regenerating today, also exclude previous suggestions for today
     if (isToday) {
       const todaysSuggestions = await db.select()
         .from(suggestions)
